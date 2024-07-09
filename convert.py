@@ -1,25 +1,51 @@
 import sys
 import os
+import imageio
 from moviepy.editor import VideoFileClip
-from PIL import Image
 
-def convert_mp4_to_gif(input_path, output_path):
-    clip = VideoFileClip(input_path)
-    clip.write_gif(output_path, program='ffmpeg', opt='nq')
+def convert_mp4_to_gif(input_path, output_path, max_size=10*1024*1024):
+    try:
+        print(f"Loading video: {input_path}")
+        clip = VideoFileClip(input_path)
+        
+        # Binary search for optimal fps
+        min_fps = 1
+        max_fps = 30
+        best_fps = min_fps
 
-    if os.path.getsize(output_path) > 10 * 1024 * 1024:  # 10mb
-        print("GIF is too large, optimising...")
-        optimise_gif(output_path)
+        while min_fps <= max_fps:
+            mid_fps = (min_fps + max_fps) // 2
+            print(f"Testing fps: {mid_fps}")
+            frames = []
+            for frame in clip.iter_frames(fps=mid_fps, dtype='uint8'):
+                frames.append(frame)
 
-def optimise_gif(gif_path):
-    with Image.open(gif_path) as img:
-        img = img.convert('P', palette=Image.ADAPTIVE, colors=256)
-        img.save(gif_path, optimize=True, quality=85)
 
-    if os.path.getsize(gif_path) > 10 * 1024 * 1024:
-        print("Optimisation failed, please try a shorter or lower resolution video.")
-    else:
-        print("Optimisation successful, file size is under 10MB.")
+            temp_gif_path = "temp.gif"
+            imageio.mimsave(temp_gif_path, frames, format='GIF', fps=mid_fps)
+
+            gif_size = os.path.getsize(temp_gif_path)
+            print(f"GIF size at {mid_fps} fps: {gif_size} bytes")
+
+            if gif_size <= max_size:
+                best_fps = mid_fps
+                min_fps = mid_fps + 1
+            else:
+                max_fps = mid_fps - 1
+
+
+            if os.path.exists(temp_gif_path):
+                os.remove(temp_gif_path)
+
+        frames = []
+        for frame in clip.iter_frames(fps=best_fps, dtype='uint8'):
+            frames.append(frame)
+
+        print(f"Creating GIF with optimal fps: {best_fps}")
+        imageio.mimsave(output_path, frames, format='GIF', fps=best_fps)
+        print(f"GIF created successfully at {best_fps} fps.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
